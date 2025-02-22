@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBR to MP4 Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        .converter-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .video-container {
+            flex: 1;
+            text-align: center;
+        }
+
+        video {
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+        }
+
+        .progress-container {
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f3f3f3;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress {
+            height: 100%;
+            width: 0%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .status-text {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>FBR to MP4 Converter</h1>
+
+    <div class="converter-box">
+        <input type="file" id="fileInput" accept=".fbr">
+        <div class="progress-container">
+            <div class="status-text" id="statusText">Chọn file để bắt đầu</div>
+            <div class="progress-bar">
+                <div class="progress" id="progress"></div>
+            </div>
+        </div>
+        <button id="convertBtn" onclick="convertFile()" disabled>Convert to MP4</button>
+        <a id="downloadLink" style="display: none;">Download MP4</a>
+    </div>
+
+    <div class="converter-container">
+        <div class="video-container">
+            <h3>Input Video (FBR)</h3>
+            <video id="inputVideo" controls></video>
+        </div>
+        <div class="video-container">
+            <h3>Output Video (MP4)</h3>
+            <video id="outputVideo" controls></video>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.4/dist/ffmpeg.min.js"></script>
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        let ffmpeg = null;
+
+        // Khởi tạo FFmpeg
+        async function loadFFmpeg() {
+            ffmpeg = createFFmpeg({ log: true });
+            await ffmpeg.load();
+        }
+
+        // Cập nhật thanh tiến trình
+        function updateProgress(percentage, message) {
+            const progressBar = document.getElementById('progress');
+            const statusText = document.getElementById('statusText');
+            progressBar.style.width = percentage + '%';
+            statusText.textContent = message;
+        }
+
+        // Xử lý chuyển đổi file
+        async function convertFile() {
+            const fileInput = document.getElementById('fileInput');
+            const convertBtn = document.getElementById('convertBtn');
+            const downloadLink = document.getElementById('downloadLink');
+            const inputVideo = document.getElementById('inputVideo');
+            const outputVideo = document.getElementById('outputVideo');
+
+            if (!fileInput.files[0]) return;
+
+            convertBtn.disabled = true;
+            updateProgress(0, 'Đang xử lý...');
+
+            try {
+                const inputFile = fileInput.files[0];
+                const outputFileName = inputFile.name.replace(/\.[^/.]+$/, "") + '.mp4';
+
+                // Hiển thị video đầu vào
+                const inputURL = URL.createObjectURL(inputFile);
+                inputVideo.src = inputURL;
+
+                // Ghi file vào bộ nhớ FFmpeg
+                updateProgress(10, 'Đang tải file lên...');
+                ffmpeg.FS('writeFile', 'input.fbr', await fetchFile(inputFile));
+
+                // Thêm progress handler
+                ffmpeg.setProgress(({ ratio }) => {
+                    const percent = Math.round(ratio * 100);
+                    updateProgress(10 + percent * 0.8, `Đang chuyển đổi... ${percent}%`);
+                });
+
+                // Chạy lệnh chuyển đổi
+                await ffmpeg.run('-i', 'input.fbr', '-c:v', 'libx264', '-preset', 'slow', '-crf', '22', 'output.mp4');
+
+                // Đọc kết quả
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+
+                // Tạo URL download và hiển thị video đầu ra
+                updateProgress(95, 'Đang tạo file kết quả...');
+                const outputURL = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+                outputVideo.src = outputURL;
+                downloadLink.href = outputURL;
+                downloadLink.download = outputFileName;
+                downloadLink.style.display = 'block';
+
+                updateProgress(100, 'Hoàn thành!');
+            } catch (error) {
+                console.error('Conversion error:', error);
+                updateProgress(0, 'Lỗi: ' + error.message);
+                alert('Conversion failed: ' + error.message);
+            } finally {
+                convertBtn.disabled = false;
+            }
+        }
+
+        // Khởi tạo khi tải trang
+        loadFFmpeg().then(() => {
+            document.getElementById('convertBtn').disabled = false;
+        });
+
+        // Kích hoạt nút convert khi chọn file
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            document.getElementById('convertBtn').disabled = !e.target.files.length;
+        });
+    </script>
+</body>
+</html>
